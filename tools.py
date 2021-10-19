@@ -13,7 +13,7 @@ from PIL import PngImagePlugin
 from looptools import status
 str_types = [str]
 
-# extracited from omni/base/store.py
+# extractted from omni/base/store.py
 
 def load(name,cwd=None,verbose=False,exclude_slice_source=False,filename=False):
 	"""
@@ -44,6 +44,36 @@ def load(name,cwd=None,verbose=False,exclude_slice_source=False,filename=False):
 	if filename: data['filename'] = fn
 	rawdat.close()
 	return data
+
+def store(obj,name,path,attrs=None,print_types=False,verbose=True):
+	"""
+	Use h5py to store a dictionary of data.
+	"""
+	import h5py
+	if type(obj) != dict: raise Exception('except: only dictionaries can be stored')
+	if os.path.isfile(path+'/'+name): raise Exception('except: file already exists: '+path+'/'+name)
+	path = os.path.abspath(os.path.expanduser(path))
+	if not os.path.isdir(path): os.mkdir(path)
+	fobj = h5py.File(path+'/'+name,'w')
+	for key in obj.keys(): 
+		if print_types: 
+			print('[WRITING] '+key+' type='+str(type(obj[key])))
+			print('[WRITING] '+key+' dtype='+str(obj[key].dtype))
+		# python3 cannot do unicode so we double check the type
+		if (type(obj[key])==np.ndarray and re.match('^str|^unicode',obj[key].dtype.name) 
+			and 'U' in obj[key].dtype.str):
+			obj[key] = obj[key].astype('S')
+		try: dset = fobj.create_dataset(key,data=obj[key])
+		except: 
+			# multidimensional scipy ndarray must be promoted to a proper numpy list
+			try: dset = fobj.create_dataset(key,data=obj[key].tolist())
+			except: raise Exception("failed to write this object so it's probably not numpy"+
+				"\n"+key+' type='+str(type(obj[key]))+' dtype='+str(obj[key].dtype))
+	if attrs != None: 
+		try: fobj.create_dataset('meta',data=np.string_(json.dumps(attrs)))
+		except Exception as e: raise Exception('failed to serialize attributes: %s'%e)
+	if verbose: status('[WRITING] '+path+'/'+name)
+	fobj.close()
 
 # extracted from omni/datapack.py
 
@@ -358,3 +388,31 @@ def picturefind(savename,directory='./',meta=None,loud=True):
 		return dict([(os.path.basename(fn),
 			picturedat(os.path.basename(fn),directory=directory)) for fn,num in nums]) 
 	return matches if not matches else matches[0]
+
+def datmerge(kwargs,name,key,same=False):
+	"""
+	Incoming upstream data are sometimes taken from multiple pickles.
+	This function stitches together the key from many of these pickles.
+	"""
+	#---if there is only one upstream object with no index we simply lookup the key we want
+	if name in kwargs.get('upstream',[]): return kwargs['upstream'][name][key]
+	else:
+		#---! this function seems to require upstream data so we except here
+		if 'upstream' not in kwargs: raise Exception('datmerge needs upstream pointers')
+		#---get indices for the upstream object added by computer
+		inds = [int(re.findall(name+'(\d+)',i)[0]) for i in kwargs['upstream'] if re.match(name,i)]
+		collected = [kwargs['upstream']['%s%d'%(name,i)][key] for i in sorted(inds)]
+		if not same:
+			if collected==[]: raise Exception('collected is empty, argument to datmerge is wrong')
+			if type(collected[0])==list: return [i for j in collected for i in j]
+			elif type(collected[0])==numpy.ndarray: 
+				#---sometimes single numbers are saved as 0-dimensional arrays
+				if numpy.shape(collected[0])==(): return numpy.array([float(i) for i in collected])
+				else: return numpy.concatenate(collected)
+			else: raise Exception('\n[ERROR] not sure how to concatenate')
+		else:
+			#---the same flag forces a check that the key is the same in each item of the collected data
+			if any([any(collected[0]!=c) for c in collected[1:]]): 
+				raise Exception('\n[ERROR] objects not same')
+			else: return collected[0]
+
