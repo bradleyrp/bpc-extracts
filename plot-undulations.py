@@ -8,10 +8,11 @@ import os,sys,re
 import argparse
 import glob
 import json
-from looptools import basic_compute_loop
+from looptools import basic_compute_loop,status
 from undulate import calculate_undulations
 from undulate_plot import undulation_panel,add_undulation_labels,add_axgrid,add_std_legend
 from tools import load,sweeper,panelplot,picturesave,picturefind
+from tools_plot import plothull
 # height correlation requires scipy
 import scipy
 import scipy.spatial
@@ -28,6 +29,7 @@ def undulation_spectra(figname,style='all_on_one'):
 	plot-analyze_dextran_undulations.py. It would be useful to compare these to be
 	sure the method is exactly the same.
 	"""
+	global sns
 	# external settings
 	# dev: define this globally: plotspecs = work.plots[plotname].get('specs',{})
 	wavevector_limits = plotspecs.get('wavevector_limits',[1.0])
@@ -199,6 +201,7 @@ def plot_height_proximity_correlation(**kwargs):
 	"""
 	Plot the instantaneous membrane height vs proximity to protein points.
 	"""
+	global sns
 	import seaborn as sb
 	# stash to globals to iterate the plot aesthetics
 	if 'post' not in globals():
@@ -208,10 +211,7 @@ def plot_height_proximity_correlation(**kwargs):
 		for sn in sns:
 			# points_all for the dimer simulations has dimensions frames, monomer, points, xyz
 			protein_pts = data_prot[sn]['data']['points_all']
-			try:
-				vecs = data[sn]['data']['vecs']
-			except:
-				import ipdb;ipdb.set_trace()
+			vecs = data[sn]['data']['vecs']
 			nframes = len(vecs)
 			mesh = data[sn]['data']['mesh'].mean(axis=0)
 			ngrid = mesh.shape[-2:]
@@ -244,6 +244,97 @@ def plot_height_proximity_correlation(**kwargs):
 	plt.legend()
 	plt.savefig(os.path.join(plotdir,'fig.height_proximity.png'))
 
+def plot_height_profiles(figname_prefix):
+	"""
+	Plot the bilayer height profile with protein positions.
+	"""
+	global sns
+	# one plot per simulation
+	for sn in sns:
+		mesh = data[sn]['data']['mesh']
+		surf = mesh.mean(axis=0).mean(axis=0)
+		surf -= surf.mean()
+		hmax = np.abs(surf).max()
+		fig = plt.figure()
+		ax = fig.add_subplot(111)
+		vecs = data[sn]['data']['vecs'].mean(axis=0)
+		im = ax.imshow(surf.T,origin='lower',
+			interpolation='nearest',cmap=mpl.cm.__dict__['RdBu_r'],
+			extent=[0,vecs[0],0,vecs[1]],vmax=hmax,vmin=-1*hmax)
+		if sn in data_prot:
+			# try:
+			if 1:
+				points_all = data_prot[sn]['data']['points_all'] 
+				points_all_mean_time = points_all.mean(axis=0)
+				plothull(ax,points_all_mean_time[...,:2],griddims=surf.shape,vecs=vecs,c='k',lw=0)	
+			#! except: status('failed to get protein points for %s'%sn,tag='warning')
+		from mpl_toolkits.axes_grid1.inset_locator import inset_axes
+		axins = inset_axes(ax,width="5%",height="100%",loc=3,
+			bbox_to_anchor=(1.05,0.,1.,1.),bbox_transform=ax.transAxes,borderpad=0)
+		cbar = plt.colorbar(im,cax=axins,orientation="vertical")
+		cbar.set_label(r"$\mathrm{\langle z \rangle (nm)}$",labelpad=-40,y=1.05,rotation=0)
+		axins.tick_params(axis='y',which='both',left='off',right='off',labelright='on')
+		ax.set_title('average bilayer height')
+		ax.set_xlabel('x (nm)')
+		ax.set_ylabel('y (nm)')
+		ax.tick_params(axis='y',which='both',left='off',right='off',labelleft='on')
+		ax.tick_params(axis='x',which='both',top='off',bottom='off',labelbottom='on')
+		# separate the filename and directory
+		figname_abs = os.path.abspath(os.path.expanduser(figname_prefix))
+		plotdir = os.path.dirname(figname_abs)
+		basename = os.path.basename(figname_abs) 
+		# use version and meta to embed a dictionary of metadata and write versioned png files
+		# by default we append the simulation code to the basename
+		picturesave(basename+'-'+sn,plotdir,backup=False,version=False,meta={})
+
+def load_data(calcnames,post_dn):
+	"""
+	Find and load data for upstream calculations (calcnames) from a directory (post_dn).
+	Data must follow the BioPhysCode naming convention.
+	"""
+	# parse specs
+	fns = [i for i in glob.glob(os.path.join(post_dn,'*.spec'))]
+	toc = {}
+	for fn in fns:
+		with open(fn) as fp:
+			spec = json.load(fp)
+		sn = spec['meta']['sn']
+		calcname = spec['calc']['name']
+		if calcname not in calcnames: continue
+		if (sn,calcname) not in toc:
+			toc[(sn,calcname)] = []
+		spec['fn'] = fn
+		toc[(sn,calcname)].append(spec)
+
+	def get_single_spec(toc,sn,calc_name):
+		candidates = toc.get((sn,calc_name),[])
+		if not candidates:
+			raise Exception('cannot find sn=%s, calc_name=%s'%(sn,calc_name))
+		elif len(candidates)>1:
+			raise Exception('redundant calculations for sn=%s, calc_name=%s'%(sn,calc_name))
+		else: return candidates[0]
+
+	# load data
+	data = {}
+	for calcname in calcnames:
+		for sn in sns:
+			key = (sn,calcname)
+			spec = get_single_spec(toc,sn,calcname)
+			fn = spec['fn']
+			fn_dat = re.sub('.spec','.dat',fn)
+			# load the h5 data
+			dat = load(fn_dat)
+			# nest the data when we need multiple upstream calculations
+			# note that the extra 'data' key is left in for backwards compatibility
+			if len(calcnames)>1:
+				if 'data' not in data[sn]: data[sn] = {'data':{}}
+				data[sn]['data'][calcname] = dat
+			# no nesting if omly one calculation is required
+			else:
+				data[sn] = {'data':dat}
+			print('[STATUS] loaded %s'%os.path.basename(fn_dat))
+	return data
+
 # iterative reexection
 import sys
 __me__ = sys.argv[0]
@@ -257,83 +348,50 @@ if __name__=='__main__':
 	calcnames = ['undulations']
 	# specifications for the upstream data
 	plotspecs = {'grid_spacing': 0.5}
-	# define metadata including labels for the plots
+	# define metadata including labels for the plots (this is an example)
 	meta = {'v1021':{'label':'v1021'}}
 	# optional color definitions
 	colors = None
 	
 	# arguments
+	modes = ['spectra','height-profiles']
 	parser = argparse.ArgumentParser(
 		epilog='Generate undulation spectra.')
 	parser.add_argument('-s',dest='source',required=True,
 		help='Folder with source data (dat/spec files).')
 	parser.add_argument('-o',dest='output',required=True,
 		help='Output plot name.')
+	parser.add_argument('-m',dest='mode',required=True,
+		help='Mode (one of: %s).'%(', '.join(modes)))
 	parser.add_argument('-n',dest='names',required=True,
 		help='Simulation names.',nargs='+')
 	args = parser.parse_args()
-	if not args.output.endswith('.png'):
-		raise Exception('the output must be a png')
-	args.output = args.output.rstrip('.png')
+	if args.mode not in modes:
+		raise Exception('mode must be one of: %s'%(', '.join(modes)))
+	if args.mode=='spectra':
+		if not args.output.endswith('.png'):
+			raise Exception('the output must be a png')
+		args.output = args.output.rstrip('.png')
+	if args.mode=='height-profiles':
+		if args.output.endswith('.png'):
+			raise Exception('output for height-profiles mode '
+				'should be a file prefix (we will add png)')
 
 	# unpack arguments
 	post_dn = args.source
-	figname = args.output
 	sns = args.names
-
-	# output location for the plots
-	#! plotdir = os.getcwd()
-	# simulation names (sns) we wish to use
-	#! sns = ['v1021', 'v1024', 'v1025', 'v1026', 'v1031', 'v1032', 'v1033', 'v1034'] 
-	# run this script with `python -i plot-undulations.py` 
-	# location of the dat files
-	#! post_dn = '/data/rbradley/legacy-factory/data/banana/post/'
 
 	# we load the data only once
 	# use `python -i` and later run `go()` to rerun the script interactively, after edits
 	if 'data' not in globals():	
 
-		# parse specs
-		fns = [i for i in glob.glob(os.path.join(post_dn,'*.spec'))]
-		toc = {}
-		for fn in fns:
-			with open(fn) as fp:
-				spec = json.load(fp)
-			sn = spec['meta']['sn']
-			calcname = spec['calc']['name']
-			if calcname not in calcnames: continue
-			if (sn,calcname) not in toc:
-				toc[(sn,calcname)] = []
-			spec['fn'] = fn
-			toc[(sn,calcname)].append(spec)
-
-		def get_single_spec(toc,sn,calc_name):
-			candidates = toc.get((sn,calc_name),[])
-			if not candidates:
-				raise Exception('cannot find sn=%s, calc_name=%s'%(sn,calc_name))
-			elif len(candidates)>1:
-				raise Exception('redundant calculations for sn=%s, calc_name=%s'%(sn,calc_name))
-			else: return candidates[0]
-
-		# load data
-		data = {}
-		for calcname in calcnames:
-			for sn in sns:
-				key = (sn,calcname)
-				spec = get_single_spec(toc,sn,calcname)
-				fn = spec['fn']
-				fn_dat = re.sub('.spec','.dat',fn)
-				# load the h5 data
-				dat = load(fn_dat)
-				# nest the data when we need multiple upstream calculations
-				# note that the extra 'data' key is left in for backwards compatibility
-				if len(calcnames)>1:
-					if 'data' not in data[sn]: data[sn] = {'data':{}}
-					data[sn]['data'][calcname] = dat
-				# no nesting if omly one calculation is required
-				else:
-					data[sn] = {'data':dat}
-				print('[STATUS] loaded %s'%os.path.basename(fn_dat))
+		data = load_data(calcnames=['undulations'],post_dn=post_dn)
+		# if you want to plot height profiles, you need the protein positions
+		if args.mode=='height-profiles':
+			data_prot = load_data(calcnames=['protein_abstractor'],post_dn=post_dn)
 
 	# plot the undulation spectra
-	undulation_spectra(figname=figname)	
+	if args.mode=='spectra':
+		undulation_spectra(figname=args.output)	
+	if args.mode=='height-profiles':
+		plot_height_profiles(figname_prefix=args.output)
