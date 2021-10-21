@@ -388,6 +388,8 @@ if __name__=='__main__':
 		return re.match('^(.*?)\.',os.path.basename(fn)).group(1)
 
 	def infer_protein_file(fn):
+		"""Infer the associated `protein_abstractor` dat file from the existing `undulations` dat file
+		whenever we want the protein positions (i.e. plotting the height profiles)."""
 		fn_alt = re.sub('.undulations.','.protein_abstractor.',fn)		
 		if not os.path.isfile(fn_alt):
 			raise Exception('failed to infer protein_abstractor for: %s'%fn)
