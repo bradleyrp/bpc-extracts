@@ -182,6 +182,21 @@ python -i calc-lipids.py -i /data/rbradley/legacy-factory/data/banana/post/v1021
 
 We supply the file prefix (without the `.gro` suffix) to the input flag on the `calc-lipids.py` script. This script uses MDAnalysis to read the trajectory, compute the lipid centers of mass, and then write the data to an h5 file which follows the format expected by code b.
 
-## Pending
+## CODE D: Generate protein positions
 
-- In order to complete height profiles, we must still port the `protein_abstractor` code from BioPhysCode into this folder. This would create the `protein_abstractor` dat files which are necessary to plot the protein position on top of the height profiles.
+To complete this calculation, we need to extract protein positions from the GROMACS trajectories to create a `protein_abstractor` data file. This file must match the name of the `undulations` dat file in order for code A (i.e. `plot-undulations.py` to find the right data and match it up to the height profiles (which come from the `lipid_abstractor` data. We ported this script into the `calc-proteins.py`. 
+
+```
+python -i calc-proteins.py -i /data/rbradley/legacy-factory/data/banana/post/v1021.2000000-12000000-10000.lipids.pbcmol -o /data/rbradley/legacy-factory/data/banana/post/v1021.2000000-12000000-10000.protein_abstractor.dat
+```
+
+## Recap
+
+If you start from an xtc and gro file, you can run these scripts in sequence to generate the undulation spectrum and height profile (with protein positions):
+
+1. `calc-lipids.py` (i.e. code C)
+2. `calc-proteins.py` (i.e. code D)
+3. `calc-undulations.py` (i.e. code B)
+4. `plot-undulations.py` (i.e. code A)
+
+Each of these scripts now has an argument parser. You can see the inputs and outputs with: `python calc-lipids.py -h`. Each simulation needs to run through all of the `calc-` scripts to produce the data required by the `plot-undulations.py` script.

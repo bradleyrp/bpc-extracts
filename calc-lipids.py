@@ -240,11 +240,11 @@ def go(): exec(open(__me__).read(),globals())
 if __name__ == '__main__':
 
 	parser = argparse.ArgumentParser(
-		epilog='Convert lipid_abstractor data to undulations data.')
+		epilog='Extract lipid centers of mass from a GROMACS simulation.')
 	parser.add_argument('-i',dest='input',required=True,
-		help='Filename prefix for GROMACS lipid trajectories (gro,xtc).')
+		help='Filename prefix for GROMACS trajectories (gro,xtc).')
 	parser.add_argument('-o',dest='output',required=True,
-		help='Filename for the undulations data output.')
+		help='Filename for the lipid_abstractor data output.')
 	args = parser.parse_args()
 	fn_prefix = args.input
 	fn_out = args.output
