@@ -88,7 +88,7 @@ BioPhysCode includes a method for linking different calculations and data togeth
 
 This code would typically search the `post` folder for pairs of `dat` and `spec` files which match the so-called "upstream" calculation, and then load these in a loop over the relevant simulations.
 
-Since we wish to analyze a set of simulations in a batch, we must first replace `work.sns` with a list of simulations in the `__main__` block of the script. Then, we need to load these into `data` systematically. We replace `work.sns()` with `sns` in vim. We also replace several other variables that are part of the "Workspace", a class which manages metadata and a tree structure which holds the calculations. The changes to the original code are implemented under the "# SETTINGS" section of the `__main__` block of `plot-undulations.py`.
+Instead of using the BioPhysCode method to manage the data, we simply select a list of dat files containing the regular grid of the lipids (we call these the "undulations" dat files) and send these to the script with the `-s` flag. The code then infers the simulation name from the file name (the text before the first `.` i.e. `v1021`) and then later links the undulations dat files to the `protein_abstractor` dat files if we are plotting the height profiles as well.
 
 After adding code to find and load the right data, we are ready to run the calculation. 
 
@@ -102,10 +102,12 @@ ml anaconda
 conda activate bpcex
 # go to the code, wherever you cloned it
 cd /data/rbradley/legacy-factory/calc/banana/bpc-extracts
+# infer the input files from a glob
+DAT_FILES=$(ls /data/rbradley/legacy-factory/data/banana/post/v1*undulations*n*dat)
 # plot the spectra
-python -i plot-undulations.py -m spectra -s /data/rbradley/legacy-factory/data/banana/post/ -o ./fig.undulations.png -n v1021 v1024 v1025 v1026 v1031 v1032 v1033 v1034
+python -i plot-undulations.py -m spectra -s $DAT_FILES -o ./fig.undulations.png
 # plot the height profiles (simulation name is appended to the output name)
-python -i plot-undulations.py -m height-profiles -s /data/rbradley/legacy-factory/data/banana/post/ -o ./fig.height-profiles -n v1021 v1024 v1025 v1026 v1031 v1032 v1033 v1034
+python -i plot-undulations.py -m height-profiles -s $DAT_FILES -o ./fig.height-profiles
 ```
 
 I have recommended the interactive flag (`-i`) in case you want to inspect the data after the calculation is complete. You can also run the `go()` command in the interactive session to rerun the script without loading data.

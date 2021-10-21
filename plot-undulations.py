@@ -17,6 +17,7 @@ from tools_plot import plothull
 import scipy
 import scipy.spatial
 import matplotlib as mpl
+mpl.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 str_types = [str]
@@ -124,6 +125,7 @@ def plot_undulation_spectrum(ax,sn,**kwargs):
 	"""
 	Plot a single undulation spectrum.
 	"""
+	global data
 	mesh = data[sn]['data']['mesh']
 	surf = mesh.mean(axis=0)
 	surf = (surf - np.tile(surf.reshape(len(surf),-1).mean(axis=1),
@@ -357,14 +359,12 @@ if __name__=='__main__':
 	modes = ['spectra','height-profiles']
 	parser = argparse.ArgumentParser(
 		epilog='Generate undulation spectra.')
-	parser.add_argument('-s',dest='source',required=True,
-		help='Folder with source data (dat/spec files).')
+	parser.add_argument('-s',dest='sources',required=True,
+		help='List of undulations dat files.',nargs='+')
 	parser.add_argument('-o',dest='output',required=True,
 		help='Output plot name.')
 	parser.add_argument('-m',dest='mode',required=True,
 		help='Mode (one of: %s).'%(', '.join(modes)))
-	parser.add_argument('-n',dest='names',required=True,
-		help='Simulation names.',nargs='+')
 	args = parser.parse_args()
 	if args.mode not in modes:
 		raise Exception('mode must be one of: %s'%(', '.join(modes)))
@@ -376,21 +376,43 @@ if __name__=='__main__':
 		if args.output.endswith('.png'):
 			raise Exception('output for height-profiles mode '
 				'should be a file prefix (we will add png)')
+	for fn in args.sources:
+		if not os.path.isfile(fn):
+			raise Exception('missing file in the sources list: %s'%fn)
 
-	# unpack arguments
-	post_dn = args.source
-	sns = args.names
+	def infer_name(fn):
+		"""
+		The name of the simulation precedes the first dot in the filename.
+		This is a placeholder function to infer the simulation name from e.g. a dat file.
+		"""
+		return re.match('^(.*?)\.',os.path.basename(fn)).group(1)
 
-	# we load the data only once
-	# use `python -i` and later run `go()` to rerun the script interactively, after edits
-	if 'data' not in globals():	
+	def infer_protein_file(fn):
+		fn_alt = re.sub('.undulations.','.protein_abstractor.',fn)		
+		if not os.path.isfile(fn_alt):
+			raise Exception('failed to infer protein_abstractor for: %s'%fn)
+		return fn_alt
 
-		data = load_data(calcnames=['undulations'],post_dn=post_dn)
-		# if you want to plot height profiles, you need the protein positions
+	# load data once if interactive
+	if 'data' not in globals():
+
+		global data
+		data = {}
+		for fn in args.sources:
+			sn = infer_name(fn)
+			data[sn] = {'data':load(fn)}
+		# define the simulation names from the existing dataset
+		sns = sorted(data.keys())
+		
+		# if we are making height profiles, and the simulations have proteines,
+		#   then we need protein data
 		if args.mode=='height-profiles':
-			data_prot = load_data(calcnames=['protein_abstractor'],post_dn=post_dn)
-
-	# plot the undulation spectra
+			data_prot = {}
+			for fn in args.sources:
+				fn_prot = infer_protein_file(fn)
+				sn = infer_name(fn_prot)
+				data_prot[sn] = {'data':load(fn_prot)}
+		
 	if args.mode=='spectra':
 		undulation_spectra(figname=args.output)	
 	if args.mode=='height-profiles':
