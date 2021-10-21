@@ -165,3 +165,23 @@ In the "code A" and "code B" examples above, I have extracted and repackaged the
 
 Since these codes still use the existing data structure in the `lipid_abstractor` dat files, they still depend on other (upstream) parts of BioPhysCode. Removing the codes from BioPhysCode also removes any file management features.
 
+## CODE C: Generate lipid positions from a sampled trajectory
+
+In this example, we start with a timewise sub-sampled trajectory of our simulation:
+
+```
+v1021.2000000-12000000-10000.lipids.pbcmol.gro
+v1021.2000000-12000000-10000.lipids.pbcmol.xtc
+```
+
+We require both a structure (gro) and trajectory file (xtc) which are both prepared from the GROMACS simulation. In this example, we wish to generate the `lipid_abstractor` dat file required as an input for code B (above).
+
+```
+python -i calc-lipids.py -i /data/rbradley/legacy-factory/data/banana/post/v1021.2000000-12000000-10000.lipids.pbcmol -o /data/rbradley/legacy-factory/data/banana/post/v1021.2000000-12000000-10000.lipid_abstractor.dat
+```
+
+We supply the file prefix (without the `.gro` suffix) to the input flag on the `calc-lipids.py` script. This script uses MDAnalysis to read the trajectory, compute the lipid centers of mass, and then write the data to an h5 file which follows the format expected by code b.
+
+## Pending
+
+- In order to complete height profiles, we must still port the `protein_abstractor` code from BioPhysCode into this folder. This would create the `protein_abstractor` dat files which are necessary to plot the protein position on top of the height profiles.
